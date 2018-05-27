@@ -1,0 +1,19 @@
+[[constraint]]
+  name = "github.com/fstab/grok_exporter"
+  version = ">=0.2"
+
+[[constraint]]
+  name = "github.com/prometheus/client_golang"
+  version = ">=0.9-pre"
+
+[[constraint]]
+  name = "github.com/sirupsen/logrus"
+  version = "1"
+
+[[constraint]]
+  name = "gopkg.in/alecthomas/kingpin.v2"
+  version = "2"
+
+[[constraint]]
+  name = "gopkg.in/yaml.v2"
+  version = "2"

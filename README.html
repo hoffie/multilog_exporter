@@ -1,0 +1,36 @@
+<h1 id="multilog_exporter">multilog_exporter</h1>
+<p>Watches one or more configured log file paths, analyzes them based on configured rules and exposes the result in the Prometheus metrics format.</p>
+<p>The files are watched using <code>inotify</code> and can handle log file rotations (based on <a href="https://github.com/fstab/grok_exporter">grok_exporter</a> code).</p>
+<p>The patterns are regular expressions. The pattern may contain groups which can later be used as label values or metric value.</p>
+<p>Currently, the following actions are supported:</p>
+<ul>
+<li><strong>add</strong> an arbitrary number (Counter, Gauge)</li>
+<li><strong>set </strong>to a new value (Gauge)</li>
+</ul>
+<p>Supported values (for metric results and label values):</p>
+<ul>
+<li>Static numbers, such as <code>1</code>, <code>10.3e5</code></li>
+<li>Regex group references, such as <code>$pool</code> from the regexp <code>pool=(?P&lt;pool&gt;[^ ]+) msg</code></li>
+<li><code>now()</code> which returns the current Unix time</li>
+</ul>
+<p>Metrics are registered at startup so that the relevant time series are generated even if no relevant log lines have been processed yet (only works for those without labels).</p>
+<h2 id="building">Building</h2>
+<p>Tested on Linux 4.x using go 1.10: <code>go get -u github.com/hoffie/multilog_exporter</code>. Run unit and integration tests using: <code>make</code></p>
+<h2 id="configuration">Configuration</h2>
+<p><code>multilog_exporter</code> is mainly configured using a configuration file in yaml syntax.</p>
+<p>The following options are command line flags, though:</p>
+<ul>
+<li><code>--metrics.listen-addr</code>, which specifies the ip and port for listening.</li>
+<li><code>--config.file</code>, the path to the mentioned config file</li>
+<li><code>--debug</code>, which helps diagnosing potential issues</li>
+</ul>
+<p>The configuration file syntax is best described by the <a href="doc/example.yaml">annotated example configuration</a>. In general, the config consists of a list of log file paths. For each log file path, a list of patterns is configured. The pattern describes how to map log lines to Prometheus metrics.</p>
+<h2 id="limitations">Limitations</h2>
+<h3 id="multi-cardinality">Multi-cardinality</h3>
+<p>There is no support for working with multi-cardinality in log files. In other words, the log line <code>errors in the following pools: prod, test, dev</code> <strong>cannot</strong> generate multiple time series with the same name, such as: <code>errors{pool=&quot;prod&quot;}</code>, <code>errors{pool=&quot;test&quot;}</code>, <code>errors{pool=&quot;dev&quot;}</code>. If it turns out there is a use case for that, support might be added.</p>
+<h3 id="arithmetic">Arithmetic</h3>
+<p>There is no support for any calculations or variables (except for references to regex groups). If it turns out this is required and cannot be solved on the scraping side, support might be added.</p>
+<h2 id="license">License</h2>
+<p>This software is released under the <a href="LICENSE">Apache 2.0 license</a>.</p>
+<h2 id="author">Author</h2>
+<p>sshified has been created by <a href="https://hoffmann-christian.info/">Christian Hoffmann</a>. If you find this project useful, please star it or drop me a short <a href="mailto:mail@hoffmann-christian.info">mail</a>.</p>
