@@ -88,7 +88,7 @@ logs:
       - match: 'users only in pool (?P<pool>[^ ]+): (?P<count>\d+)'
         metric: users_only
 
-        # Until know we have only seen counters. Now we have a gauge. In contrast to a counter,
+        # Until now we have only seen counters. Now we have a gauge. In contrast to a counter,
         # a gauge may fluctuate arbitrarily. Its value may also decrease.
         type: gauge
         help: Number of users online
