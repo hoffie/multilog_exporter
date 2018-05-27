@@ -9,7 +9,8 @@ The pattern may contain groups which can later be used as label values or metric
 Currently, the following actions are supported:
 
   * **add** an arbitrary number (Counter, Gauge)
-  * **set **to a new value (Gauge)
+  * **set** to a new value (Gauge)
+  * **dec** to decrease by an arbitrary number (Gauge)
 
 Supported values (for metric results and label values):
 
@@ -62,5 +63,5 @@ In fact, multilog_exporter even uses grok_exporter's library for handling file s
 This software is released under the [Apache 2.0 license](LICENSE).
 
 ## Author
-sshified has been created by [Christian Hoffmann](https://hoffmann-christian.info/).
+multilog_exporter has been created by [Christian Hoffmann](https://hoffmann-christian.info/).
 If you find this project useful, please star it or drop me a short [mail](mailto:mail@hoffmann-christian.info).
