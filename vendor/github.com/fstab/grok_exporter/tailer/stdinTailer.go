@@ -1,4 +1,4 @@
-// Copyright 2016-2017 The grok_exporter Authors
+// Copyright 2016-2018 The grok_exporter Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,14 +22,14 @@ import (
 
 type stdinTailer struct {
 	lines  chan string
-	errors chan error
+	errors chan Error
 }
 
 func (t *stdinTailer) Lines() chan string {
 	return t.lines
 }
 
-func (t *stdinTailer) Errors() chan error {
+func (t *stdinTailer) Errors() chan Error {
 	return t.errors
 }
 
@@ -39,13 +39,13 @@ func (t *stdinTailer) Close() {
 
 func RunStdinTailer() Tailer {
 	lineChan := make(chan string)
-	errorChan := make(chan error)
+	errorChan := make(chan Error)
 	go func() {
 		reader := bufio.NewReader(os.Stdin)
 		for {
 			line, err := reader.ReadString('\n')
 			if err != nil {
-				errorChan <- err
+				errorChan <- newError("", err)
 				return
 			}
 			line = strings.TrimRight(line, "\r\n")

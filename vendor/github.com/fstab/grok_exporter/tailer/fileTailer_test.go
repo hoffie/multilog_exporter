@@ -1,4 +1,4 @@
-// Copyright 2016-2017 The grok_exporter Authors
+// Copyright 2016-2018 The grok_exporter Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -201,7 +201,7 @@ func TestFileMissingOnStartup(t *testing.T) {
 	// Double check that file does not exist yet
 	_, err := os.Stat(logfile)
 	if err == nil || !os.IsNotExist(err) {
-		t.Fatalf("%v should not exist yet")
+		t.Fatalf("%v should not exist yet", logfile)
 	}
 
 	logFileWriter := newLogFileWriter(t, logfile, closeFileAfterEachLine)

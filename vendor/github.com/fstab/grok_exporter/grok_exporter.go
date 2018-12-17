@@ -1,4 +1,4 @@
-// Copyright 2016-2017 The grok_exporter Authors
+// Copyright 2016-2018 The grok_exporter Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import (
 	"github.com/fstab/grok_exporter/config"
 	"github.com/fstab/grok_exporter/config/v2"
 	"github.com/fstab/grok_exporter/exporter"
+	"github.com/fstab/grok_exporter/oniguruma"
 	"github.com/fstab/grok_exporter/tailer"
 	"github.com/prometheus/client_golang/prometheus"
 	"net/http"
@@ -57,9 +58,7 @@ func main() {
 	}
 	patterns, err := initPatterns(cfg)
 	exitOnError(err)
-	libonig, err := exporter.InitOnigurumaLib()
-	exitOnError(err)
-	metrics, err := createMetrics(cfg, patterns, libonig)
+	metrics, err := createMetrics(cfg, patterns)
 	exitOnError(err)
 	for _, m := range metrics {
 		prometheus.MustRegister(m.Collector())
@@ -69,7 +68,7 @@ func main() {
 	tail, err := startTailer(cfg)
 	exitOnError(err)
 	fmt.Print(startMsg(cfg))
-	serverErrors := startServer(cfg, "/metrics", prometheus.Handler())
+	serverErrors := startServer(cfg.Server, prometheus.Handler())
 
 	retentionTicker := time.NewTicker(cfg.Global.RetentionCheckInterval)
 
@@ -78,7 +77,11 @@ func main() {
 		case err := <-serverErrors:
 			exitOnError(fmt.Errorf("server error: %v", err.Error()))
 		case err := <-tail.Errors():
-			exitOnError(fmt.Errorf("error reading log lines: %v", err.Error()))
+			if os.IsNotExist(err.Cause()) {
+				exitOnError(fmt.Errorf("error reading log lines: %v: use 'fail_on_missing_logfile: false' in the input configuration if you want grok_exporter to start even though the logfile is missing", err))
+			} else {
+				exitOnError(fmt.Errorf("error reading log lines: %v", err.Error()))
+			}
 		case line := <-tail.Lines():
 			matched := false
 			for _, metric := range metrics {
@@ -130,7 +133,7 @@ func startMsg(cfg *v2.Config) string {
 			host = hostname
 		}
 	}
-	return fmt.Sprintf("Starting server on %v://%v:%v/metrics\n", cfg.Server.Protocol, host, cfg.Server.Port)
+	return fmt.Sprintf("Starting server on %v://%v:%v%v\n", cfg.Server.Protocol, host, cfg.Server.Port, cfg.Server.Path)
 }
 
 func exitOnError(err error) {
@@ -168,19 +171,19 @@ func initPatterns(cfg *v2.Config) (*exporter.Patterns, error) {
 	return patterns, nil
 }
 
-func createMetrics(cfg *v2.Config, patterns *exporter.Patterns, libonig *exporter.OnigurumaLib) ([]exporter.Metric, error) {
+func createMetrics(cfg *v2.Config, patterns *exporter.Patterns) ([]exporter.Metric, error) {
 	result := make([]exporter.Metric, 0, len(cfg.Metrics))
 	for _, m := range cfg.Metrics {
 		var (
-			regex, deleteRegex *exporter.OnigurumaRegexp
+			regex, deleteRegex *oniguruma.Regex
 			err                error
 		)
-		regex, err = exporter.Compile(m.Match, patterns, libonig)
+		regex, err = exporter.Compile(m.Match, patterns)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize metric %v: %v", m.Name, err.Error())
 		}
 		if len(m.DeleteMatch) > 0 {
-			deleteRegex, err = exporter.Compile(m.DeleteMatch, patterns, libonig)
+			deleteRegex, err = exporter.Compile(m.DeleteMatch, patterns)
 			if err != nil {
 				return nil, fmt.Errorf("failed to initialize metric %v: %v", m.Name, err.Error())
 			}
@@ -245,21 +248,21 @@ func initSelfMonitoring(metrics []exporter.Metric) (*prometheus.CounterVec, *pro
 	return nLinesTotal, nMatchesByMetric, procTimeMicrosecondsByMetric, nErrorsByMetric
 }
 
-func startServer(cfg *v2.Config, path string, handler http.Handler) chan error {
+func startServer(cfg v2.ServerConfig, handler http.Handler) chan error {
 	serverErrors := make(chan error)
 	go func() {
 		switch {
-		case cfg.Server.Protocol == "http":
-			serverErrors <- exporter.RunHttpServer(cfg.Server.Host, cfg.Server.Port, path, handler)
-		case cfg.Server.Protocol == "https":
-			if cfg.Server.Cert != "" && cfg.Server.Key != "" {
-				serverErrors <- exporter.RunHttpsServer(cfg.Server.Host, cfg.Server.Port, cfg.Server.Cert, cfg.Server.Key, path, handler)
+		case cfg.Protocol == "http":
+			serverErrors <- exporter.RunHttpServer(cfg.Host, cfg.Port, cfg.Path, handler)
+		case cfg.Protocol == "https":
+			if cfg.Cert != "" && cfg.Key != "" {
+				serverErrors <- exporter.RunHttpsServer(cfg.Host, cfg.Port, cfg.Cert, cfg.Key, cfg.Path, handler)
 			} else {
-				serverErrors <- exporter.RunHttpsServerWithDefaultKeys(cfg.Server.Host, cfg.Server.Port, path, handler)
+				serverErrors <- exporter.RunHttpsServerWithDefaultKeys(cfg.Host, cfg.Port, cfg.Path, handler)
 			}
 		default:
 			// This cannot happen, because cfg.validate() makes sure that protocol is either http or https.
-			serverErrors <- fmt.Errorf("Configuration error: Invalid 'server.protocol': '%v'. Expecting 'http' or 'https'.", cfg.Server.Protocol)
+			serverErrors <- fmt.Errorf("Configuration error: Invalid 'server.protocol': '%v'. Expecting 'http' or 'https'.", cfg.Protocol)
 		}
 	}()
 	return serverErrors

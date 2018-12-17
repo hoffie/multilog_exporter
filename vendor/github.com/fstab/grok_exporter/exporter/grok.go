@@ -1,4 +1,4 @@
-// Copyright 2016-2017 The grok_exporter Authors
+// Copyright 2016-2018 The grok_exporter Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,25 +17,26 @@ package exporter
 import (
 	"fmt"
 	"github.com/fstab/grok_exporter/config/v2"
-	"github.com/fstab/grok_exporter/templates"
+	"github.com/fstab/grok_exporter/oniguruma"
+	"github.com/fstab/grok_exporter/template"
 	"regexp"
 	"strings"
 )
 
 // Compile a grok pattern string into a regular expression.
-func Compile(pattern string, patterns *Patterns, libonig *OnigurumaLib) (*OnigurumaRegexp, error) {
+func Compile(pattern string, patterns *Patterns) (*oniguruma.Regex, error) {
 	regex, err := expand(pattern, patterns)
 	if err != nil {
 		return nil, err
 	}
-	result, err := libonig.Compile(regex)
+	result, err := oniguruma.Compile(regex)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile pattern %v: error in regular expression %v: %v", pattern, regex, err.Error())
 	}
 	return result, nil
 }
 
-func VerifyFieldNames(m *v2.MetricConfig, regex, deleteRegex *OnigurumaRegexp) error {
+func VerifyFieldNames(m *v2.MetricConfig, regex, deleteRegex *oniguruma.Regex) error {
 	for _, template := range m.LabelTemplates {
 		err := verifyFieldName(m.Name, template, regex)
 		if err != nil {
@@ -57,7 +58,7 @@ func VerifyFieldNames(m *v2.MetricConfig, regex, deleteRegex *OnigurumaRegexp) e
 	return nil
 }
 
-func verifyFieldName(metricName string, template templates.Template, regex *OnigurumaRegexp) error {
+func verifyFieldName(metricName string, template template.Template, regex *oniguruma.Regex) error {
 	if template != nil {
 		for _, grokFieldName := range template.ReferencedGrokFields() {
 			if !regex.HasCaptureGroup(grokFieldName) {

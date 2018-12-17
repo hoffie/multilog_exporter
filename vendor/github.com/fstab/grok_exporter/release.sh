@@ -9,7 +9,7 @@ set -e
 
 cd $GOPATH/src/github.com/fstab/grok_exporter
 
-export VERSION=0.2.4
+export VERSION=0.2.6
 
 export VERSION_FLAGS="\
         -X github.com/fstab/grok_exporter/exporter.Version=$VERSION
@@ -35,12 +35,12 @@ function enable_legacy_static_linking {
     # The compile script in the Docker image sets CGO_LDFLAGS to libonig.a, which should make grok_exporter
     # statically linked with the Oniguruma library. However, this doesn't work on Darwin and CentOS 6.
     # As a workaround, we set LDFLAGS directly in the header of oniguruma.go.
-    sed -i.bak 's;#cgo LDFLAGS: -L/usr/local/lib -lonig;#cgo LDFLAGS: /usr/local/lib/libonig.a;' exporter/oniguruma.go
+    sed -i.bak 's;#cgo LDFLAGS: -L/usr/local/lib -lonig;#cgo LDFLAGS: /usr/local/lib/libonig.a;' oniguruma/oniguruma.go
 }
 
 function revert_legacy_static_linking {
-    if [ -f exporter/oniguruma.go.bak ] ; then
-        mv exporter/oniguruma.go.bak exporter/oniguruma.go
+    if [ -f oniguruma/oniguruma.go.bak ] ; then
+        mv oniguruma/oniguruma.go.bak oniguruma/oniguruma.go
     fi
 }
 
@@ -83,6 +83,14 @@ function run_docker_linux_arm64v8 {
         ./compile-linux.sh -ldflags "$VERSION_FLAGS" -o "dist/grok_exporter-$VERSION.linux-arm64v8/grok_exporter"
 }
 
+function run_docker_linux_arm32v7 {
+    docker run \
+        -v $GOPATH/src/github.com/fstab/grok_exporter:/root/go/src/github.com/fstab/grok_exporter \
+        --net none \
+        --rm -ti fstab/grok_exporter-compiler-arm32v7:latest \
+        ./compile-linux.sh -ldflags "$VERSION_FLAGS" -o "dist/grok_exporter-$VERSION.linux-arm32v7/grok_exporter"
+}
+
 #--------------------------------------------------------------
 # Release functions
 #--------------------------------------------------------------
@@ -99,6 +107,12 @@ function release_linux_arm64v8 {
     echo "Building dist/grok_exporter-$VERSION.linux-arm64v8.zip"
     run_docker_linux_arm64v8
     create_zip_file grok_exporter-$VERSION.linux-arm64v8
+}
+
+function release_linux_arm32v7 {
+    echo "Building dist/grok_exporter-$VERSION.linux-arm32v7.zip"
+    run_docker_linux_arm32v7
+    create_zip_file grok_exporter-$VERSION.linux-arm32v7
 }
 
 function release_windows_amd64 {
@@ -121,33 +135,32 @@ function release_darwin_amd64 {
 
 case $1 in
     linux-amd64)
-        rm -rf dist/*
+        rm -rf dist/grok_exporter-*.linux-amd64*
         run_tests
         release_linux_amd64
         ;;
     linux-arm64v8)
-        rm -rf dist/*
+        rm -rf dist/grok_exporter-*.linux-arm64v8*
         run_tests
         release_linux_arm64v8
         ;;
+    linux-arm32v7)
+        rm -rf dist/grok_exporter-*.linux-arm32v7*
+        run_tests
+        release_linux_arm32v7
+        ;;
     darwin-amd64)
-        if [[ $(go version) != *"1.9.3"* ]]; then
-            # Cannot upgrade to 1.9.4 until this is fixed:
-            # https://github.com/golang/go/issues/23739
-            echo "Go version 1.9.3 required." >&2
-            exit -1
-        fi
-        rm -rf dist/*
+        rm -rf dist/grok_exporter-*.darwin-amd64*
         run_tests
         release_darwin_amd64
         ;;
     windows-amd64)
-        rm -rf dist/*
+        rm -rf dist/grok_exporter-*.windows-amd64*
         run_tests
         release_windows_amd64
         ;;
     all-amd64)
-        rm -rf dist/*
+        rm -rf dist/grok_exporter-*.*-amd64*
         run_tests
         release_linux_amd64
         release_darwin_amd64
@@ -160,6 +173,7 @@ case $1 in
         echo '    - darwin-amd64' >&2
         echo '    - windows-amd64' >&2
         echo '    - linux-arm64v8' >&2
+        echo '    - linux-arm32v7' >&2
         echo '    - all-amd64' >&2
         exit -1
 esac

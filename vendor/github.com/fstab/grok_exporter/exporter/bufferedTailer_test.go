@@ -1,4 +1,4 @@
-// Copyright 2016-2017 The grok_exporter Authors
+// Copyright 2016-2018 The grok_exporter Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ package exporter
 
 import (
 	"fmt"
+	"github.com/fstab/grok_exporter/tailer"
 	"math/rand"
 	"sync"
 	"testing"
@@ -30,7 +31,7 @@ func (tail *sourceTailer) Lines() chan string {
 	return tail.lines
 }
 
-func (tail *sourceTailer) Errors() chan error {
+func (tail *sourceTailer) Errors() chan tailer.Error {
 	return nil
 }
 
