@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"testing"
 	"time"
 )
@@ -130,6 +131,37 @@ func TestPatternEvalTime(t *testing.T) {
 		t.Fatalf("wrong value, got=%v", got)
 	}
 }
+
+func TestPatternEvalLabelTime(t *testing.T) {
+	pc := &PatternConfig{
+		Metric: "last_success",
+		Type:   "gauge",
+		Action: "set",
+		Value:  "83",
+		Labels: map[string]string{
+			"timestamp": "now()",
+		},
+	}
+	err := pc.compile()
+	if err != nil {
+		t.Fatalf("compile failed: %s", err)
+	}
+	got, err := pc.getEvaluatedLabels([]string{})
+	if err != nil {
+		t.Fatalf("got err: %s", err)
+	}
+
+	now:=time.Now().Unix()
+	gotLabelTs, err := strconv.ParseInt(got["timestamp"], 10, 64)
+	if err != nil {
+		t.Fatalf("got err: %s", err)
+	}
+
+	if !(gotLabelTs <= now && gotLabelTs > now-60) {
+		t.Fatalf("wrong value, got=%v", got)
+	}
+}
+
 
 func TestPatternEvalMatch(t *testing.T) {
 	pc := &PatternConfig{

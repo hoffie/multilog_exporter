@@ -137,6 +137,10 @@ func (pc *PatternConfig) eval(matches []string) (float64, error) {
 func (pc *PatternConfig) getEvaluatedLabels(matches []string) (map[string]string, error) {
 	ret := map[string]string{}
 	for label, val := range pc.Labels {
+		if val == "now()" {
+			ret[label] = strconv.FormatInt(time.Now().Unix(), 10)
+			continue
+		}
 		if !strings.HasPrefix(val, "$") {
 			ret[label] = val
 			continue
