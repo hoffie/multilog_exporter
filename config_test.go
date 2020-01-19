@@ -127,7 +127,10 @@ func TestPatternEvalTime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("got err: %s", err)
 	}
-	if int64(got) < time.Now().Unix() && int64(got) > time.Now().Unix()-60 {
+
+	now:=time.Now().Unix()
+
+	if !(int64(got) <= now && int64(got) > now -60) {
 		t.Fatalf("wrong value, got=%v", got)
 	}
 }
