@@ -28,15 +28,26 @@ func (regex *Regex) Gsub(input, replacement string) (string, error) {
 		return "", fmt.Errorf("syntax error in replacement string: %v", err)
 	}
 	replacements := make([]*replacementRegion, 0, 4)
-	searchResult, err := regex.Search(input)
 	offset := 0
-	for ; err == nil && searchResult.IsMatch(); searchResult, err = regex.searchWithOffset(input, offset) {
+	for searchResult, err := regex.Search(input); err == nil && searchResult.IsMatch(); searchResult, err = regex.searchWithOffset(input, offset) {
 		replacements = append(replacements, &replacementRegion{
 			start:       searchResult.startPos(),
 			end:         searchResult.endPos(),
 			replacement: createReplacementString(searchResult, tokens),
 		})
-		offset = searchResult.endPos()
+		newOffset := searchResult.endPos()
+		searchResult.Free()
+		if newOffset == offset {
+			// We matched an empty string, for example with a regex like .* or .*?
+			// Either we are at the end of the input, then we quit
+			if offset == len(input) {
+				break
+			}
+			// Or we are not at the end of the input, then we continue with the next character.
+			offset++
+		} else {
+			offset = newOffset
+		}
 	}
 	err = assertNotOverlapping(replacements) // should never happen, but keep it for debugging
 	if err != nil {

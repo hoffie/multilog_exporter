@@ -22,9 +22,12 @@ import (
 	"github.com/fstab/grok_exporter/exporter"
 	"github.com/fstab/grok_exporter/oniguruma"
 	"github.com/fstab/grok_exporter/tailer"
+	"github.com/fstab/grok_exporter/tailer/fswatcher"
+	"github.com/fstab/grok_exporter/tailer/glob"
 	"github.com/prometheus/client_golang/prometheus"
-	"net/http"
+	"github.com/sirupsen/logrus"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -67,8 +70,20 @@ func main() {
 
 	tail, err := startTailer(cfg)
 	exitOnError(err)
-	fmt.Print(startMsg(cfg))
-	serverErrors := startServer(cfg.Server, prometheus.Handler())
+
+	// gather up the handlers with which to start the webserver
+	httpHandlers := []exporter.HttpServerPathHandler{}
+	httpHandlers = append(httpHandlers, exporter.HttpServerPathHandler{
+		Path:    cfg.Server.Path,
+		Handler: prometheus.Handler()})
+	if cfg.Input.Type == "webhook" {
+		httpHandlers = append(httpHandlers, exporter.HttpServerPathHandler{
+			Path:    cfg.Input.WebhookPath,
+			Handler: tailer.WebhookHandler()})
+	}
+
+	fmt.Print(startMsg(cfg, httpHandlers))
+	serverErrors := startServer(cfg.Server, httpHandlers)
 
 	retentionTicker := time.NewTicker(cfg.Global.RetentionCheckInterval)
 
@@ -86,10 +101,10 @@ func main() {
 			matched := false
 			for _, metric := range metrics {
 				start := time.Now()
-				match, err := metric.ProcessMatch(line)
+				match, err := metric.ProcessMatch(line.Line)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "WARNING: skipping log line: %v\n", err.Error())
-					fmt.Fprintf(os.Stderr, "%v\n", line)
+					fmt.Fprintf(os.Stderr, "%v\n", line.Line)
 					nErrorsByMetric.WithLabelValues(metric.Name()).Inc()
 				}
 				if match != nil {
@@ -97,10 +112,10 @@ func main() {
 					procTimeMicrosecondsByMetric.WithLabelValues(metric.Name()).Add(float64(time.Since(start).Nanoseconds() / int64(1000)))
 					matched = true
 				}
-				_, err = metric.ProcessDeleteMatch(line)
+				_, err = metric.ProcessDeleteMatch(line.Line)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "WARNING: skipping log line: %v\n", err.Error())
-					fmt.Fprintf(os.Stderr, "%v\n", line)
+					fmt.Fprintf(os.Stderr, "%v\n", line.Line)
 					nErrorsByMetric.WithLabelValues(metric.Name()).Inc()
 				}
 				// TODO: create metric to monitor number of matching delete_patterns
@@ -123,7 +138,7 @@ func main() {
 	}
 }
 
-func startMsg(cfg *v2.Config) string {
+func startMsg(cfg *v2.Config, httpHandlers []exporter.HttpServerPathHandler) string {
 	host := "localhost"
 	if len(cfg.Server.Host) > 0 {
 		host = cfg.Server.Host
@@ -133,7 +148,15 @@ func startMsg(cfg *v2.Config) string {
 			host = hostname
 		}
 	}
-	return fmt.Sprintf("Starting server on %v://%v:%v%v\n", cfg.Server.Protocol, host, cfg.Server.Port, cfg.Server.Path)
+
+	var sb strings.Builder
+	baseUrl := fmt.Sprintf("%v://%v:%v", cfg.Server.Protocol, host, cfg.Server.Port)
+	sb.WriteString("Starting server on")
+	for _, httpHandler := range httpHandlers {
+		sb.WriteString(fmt.Sprintf(" %v%v", baseUrl, httpHandler.Path))
+	}
+	sb.WriteString("\n")
+	return sb.String()
 }
 
 func exitOnError(err error) {
@@ -248,17 +271,17 @@ func initSelfMonitoring(metrics []exporter.Metric) (*prometheus.CounterVec, *pro
 	return nLinesTotal, nMatchesByMetric, procTimeMicrosecondsByMetric, nErrorsByMetric
 }
 
-func startServer(cfg v2.ServerConfig, handler http.Handler) chan error {
+func startServer(cfg v2.ServerConfig, httpHandlers []exporter.HttpServerPathHandler) chan error {
 	serverErrors := make(chan error)
 	go func() {
 		switch {
 		case cfg.Protocol == "http":
-			serverErrors <- exporter.RunHttpServer(cfg.Host, cfg.Port, cfg.Path, handler)
+			serverErrors <- exporter.RunHttpServer(cfg.Host, cfg.Port, httpHandlers)
 		case cfg.Protocol == "https":
 			if cfg.Cert != "" && cfg.Key != "" {
-				serverErrors <- exporter.RunHttpsServer(cfg.Host, cfg.Port, cfg.Cert, cfg.Key, cfg.Path, handler)
+				serverErrors <- exporter.RunHttpsServer(cfg.Host, cfg.Port, cfg.Cert, cfg.Key, httpHandlers)
 			} else {
-				serverErrors <- exporter.RunHttpsServerWithDefaultKeys(cfg.Host, cfg.Port, cfg.Path, handler)
+				serverErrors <- exporter.RunHttpsServerWithDefaultKeys(cfg.Host, cfg.Port, httpHandlers)
 			}
 		default:
 			// This cannot happen, because cfg.validate() makes sure that protocol is either http or https.
@@ -268,19 +291,28 @@ func startServer(cfg v2.ServerConfig, handler http.Handler) chan error {
 	return serverErrors
 }
 
-func startTailer(cfg *v2.Config) (tailer.Tailer, error) {
-	var tail tailer.Tailer
+func startTailer(cfg *v2.Config) (fswatcher.FileTailer, error) {
+	logger := logrus.New()
+	logger.Level = logrus.WarnLevel
+	var tail fswatcher.FileTailer
+	g, err := glob.FromPath(cfg.Input.Path)
+	if err != nil {
+		return nil, err
+	}
 	switch {
 	case cfg.Input.Type == "file":
 		if cfg.Input.PollInterval == 0 {
-			tail = tailer.RunFseventFileTailer(cfg.Input.Path, cfg.Input.Readall, cfg.Input.FailOnMissingLogfile, nil)
+			tail, err = fswatcher.RunFileTailer([]glob.Glob{g}, cfg.Input.Readall, cfg.Input.FailOnMissingLogfile, logger)
 		} else {
-			tail = tailer.RunPollingFileTailer(cfg.Input.Path, cfg.Input.Readall, cfg.Input.FailOnMissingLogfile, cfg.Input.PollInterval, nil)
+			tail, err = fswatcher.RunPollingFileTailer([]glob.Glob{g}, cfg.Input.Readall, cfg.Input.FailOnMissingLogfile, cfg.Input.PollInterval, logger)
 		}
 	case cfg.Input.Type == "stdin":
 		tail = tailer.RunStdinTailer()
+	case cfg.Input.Type == "webhook":
+		tail = tailer.InitWebhookTailer(&cfg.Input)
 	default:
 		return nil, fmt.Errorf("Config error: Input type '%v' unknown.", cfg.Input.Type)
 	}
-	return exporter.BufferedTailerWithMetrics(tail), nil
+	bufferLoadMetric := exporter.NewBufferLoadMetric(logger, cfg.Input.MaxLinesInBuffer > 0)
+	return tailer.BufferedTailerWithMetrics(tail, bufferLoadMetric, logger, cfg.Input.MaxLinesInBuffer), nil
 }

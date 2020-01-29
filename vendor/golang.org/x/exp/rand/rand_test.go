@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"testing"
 	"testing/iotest"
+	"time"
 )
 
 const (
@@ -457,6 +458,34 @@ func TestShuffleSmall(t *testing.T) {
 	}
 }
 
+func TestPCGSourceRoundTrip(t *testing.T) {
+	var src PCGSource
+	src.Seed(uint64(time.Now().Unix()))
+
+	src.Uint64() // Step PRNG once to makes sure high and low are different.
+
+	buf, err := src.MarshalBinary()
+	if err != nil {
+		t.Errorf("unexpected error marshaling state: %v", err)
+	}
+
+	var dst PCGSource
+	// Get dst into a non-zero state.
+	dst.Seed(1)
+	for i := 0; i < 10; i++ {
+		dst.Uint64()
+	}
+
+	err = dst.UnmarshalBinary(buf)
+	if err != nil {
+		t.Errorf("unexpected error unmarshaling state: %v", err)
+	}
+
+	if dst != src {
+		t.Errorf("mismatch between generator states: got:%+v want:%+v", dst, src)
+	}
+}
+
 // Benchmarks
 
 func BenchmarkSource(b *testing.B) {
@@ -470,6 +499,14 @@ func BenchmarkInt63Threadsafe(b *testing.B) {
 	for n := b.N; n > 0; n-- {
 		Int63()
 	}
+}
+
+func BenchmarkInt63ThreadsafeParallel(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			Int63()
+		}
+	})
 }
 
 func BenchmarkInt63Unthreadsafe(b *testing.B) {

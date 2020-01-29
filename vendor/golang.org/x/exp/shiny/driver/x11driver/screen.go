@@ -51,6 +51,7 @@ type screenImpl struct {
 
 	// opaqueP is a fully opaque, solid fill picture.
 	opaqueP render.Picture
+	useShm  bool
 
 	uniformMu sync.Mutex
 	uniformC  render.Color
@@ -64,13 +65,14 @@ type screenImpl struct {
 	completionKeys  []uint16
 }
 
-func newScreenImpl(xc *xgb.Conn) (*screenImpl, error) {
+func newScreenImpl(xc *xgb.Conn, useShm bool) (*screenImpl, error) {
 	s := &screenImpl{
 		xc:      xc,
 		xsi:     xproto.Setup(xc).DefaultScreen(xc),
 		buffers: map[shm.Seg]*bufferImpl{},
 		uploads: map[uint16]chan struct{}{},
 		windows: map[xproto.Window]*windowImpl{},
+		useShm:  useShm,
 	}
 	if err := s.initAtoms(); err != nil {
 		return nil, err
@@ -113,6 +115,7 @@ func newScreenImpl(xc *xgb.Conn) (*screenImpl, error) {
 }
 
 func (s *screenImpl) run() {
+	keyboardChanged := false
 	for {
 		ev, err := s.xc.WaitForEvent()
 		if err != nil {
@@ -188,6 +191,10 @@ func (s *screenImpl) run() {
 			}
 
 		case xproto.KeyPressEvent:
+			if keyboardChanged {
+				keyboardChanged = false
+				s.initKeyboardMapping()
+			}
 			if w := s.findWindow(ev.Event); w != nil {
 				w.handleKey(ev.Detail, ev.State, key.DirPress)
 			} else {
@@ -195,6 +202,10 @@ func (s *screenImpl) run() {
 			}
 
 		case xproto.KeyReleaseEvent:
+			if keyboardChanged {
+				keyboardChanged = false
+				s.initKeyboardMapping()
+			}
 			if w := s.findWindow(ev.Event); w != nil {
 				w.handleKey(ev.Detail, ev.State, key.DirRelease)
 			} else {
@@ -220,6 +231,11 @@ func (s *screenImpl) run() {
 				w.handleMouse(ev.EventX, ev.EventY, 0, ev.State, mouse.DirNone)
 			} else {
 				noWindowFound = true
+			}
+
+		case xproto.MappingNotifyEvent:
+			if ev.Request == xproto.MappingModifier || ev.Request == xproto.MappingKeyboard {
+				keyboardChanged = true
 			}
 		}
 
@@ -268,12 +284,26 @@ const (
 )
 
 func (s *screenImpl) NewBuffer(size image.Point) (retBuf screen.Buffer, retErr error) {
-	// TODO: detect if the X11 server or connection cannot support SHM pixmaps,
-	// and fall back to regular pixmaps.
 
 	w, h := int64(size.X), int64(size.Y)
 	if w < 0 || maxShmSide < w || h < 0 || maxShmSide < h || maxShmSize < 4*w*h {
 		return nil, fmt.Errorf("x11driver: invalid buffer size %v", size)
+	}
+
+	// If the X11 server or connection cannot support SHM pixmaps,
+	// fall back to regular pixmaps.
+	if !s.useShm {
+		b := &bufferFallbackImpl{
+			xc:   s.xc,
+			size: size,
+			rgba: image.RGBA{
+				Stride: 4 * size.X,
+				Rect:   image.Rectangle{Max: size},
+				Pix:    make([]uint8, 4*size.X*size.Y),
+			},
+		}
+		b.buf = b.rgba.Pix
+		return b, nil
 	}
 
 	b := &bufferImpl{
@@ -480,8 +510,46 @@ func (s *screenImpl) initKeyboardMapping() error {
 		return fmt.Errorf("x11driver: too few keysyms per keycode: %d", n)
 	}
 	for i := keyLo; i <= keyHi; i++ {
-		s.keysyms[i][0] = uint32(km.Keysyms[(i-keyLo)*n+0])
-		s.keysyms[i][1] = uint32(km.Keysyms[(i-keyLo)*n+1])
+		for j := 0; j < 6; j++ {
+			if j < n {
+				s.keysyms.Table[i][j] = uint32(km.Keysyms[(i-keyLo)*n+j])
+			} else {
+				s.keysyms.Table[i][j] = 0
+			}
+		}
+	}
+
+	// Figure out which modifier is the numlock modifier (see chapter 12.7 of the XLib Manual).
+	mm, err := xproto.GetModifierMapping(s.xc).Reply()
+	if err != nil {
+		return err
+	}
+	s.keysyms.NumLockMod, s.keysyms.ModeSwitchMod, s.keysyms.ISOLevel3ShiftMod = 0, 0, 0
+	numLockFound, modeSwitchFound, isoLevel3ShiftFound := false, false, false
+modifierSearchLoop:
+	for modifier := 0; modifier < 8; modifier++ {
+		for i := 0; i < int(mm.KeycodesPerModifier); i++ {
+			const (
+				// XK_Num_Lock, XK_Mode_switch and XK_ISO_Level3_Shift from /usr/include/X11/keysymdef.h.
+				xkNumLock        = 0xff7f
+				xkModeSwitch     = 0xff7e
+				xkISOLevel3Shift = 0xfe03
+			)
+			switch s.keysyms.Table[mm.Keycodes[modifier*int(mm.KeycodesPerModifier)+i]][0] {
+			case xkNumLock:
+				s.keysyms.NumLockMod = 1 << uint(modifier)
+				numLockFound = true
+			case xkModeSwitch:
+				s.keysyms.ModeSwitchMod = 1 << uint(modifier)
+				modeSwitchFound = true
+			case xkISOLevel3Shift:
+				s.keysyms.ISOLevel3ShiftMod = 1 << uint(modifier)
+				isoLevel3ShiftFound = true
+			}
+			if numLockFound && modeSwitchFound && isoLevel3ShiftFound {
+				break modifierSearchLoop
+			}
+		}
 	}
 	return nil
 }

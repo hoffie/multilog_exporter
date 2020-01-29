@@ -54,7 +54,7 @@ server:
     port: 9144
 ```
 
-[CONFIG.md] describes the `grok_exporter` configuration file and shows how to define Grok patterns, Prometheus metrics, and labels.
+[CONFIG.md] describes the `grok_exporter` configuration file and shows how to define Grok patterns, Prometheus metrics, and labels.  It also details how to configure file, stdin, and webhook inputs.
 
 Status
 ------
@@ -79,19 +79,21 @@ Prometheus support:
 How to build from source
 -----------------------
 
-In order to compile `grok_exporter` from source, you need [Go] installed and `$GOPATH` set, and you need the header files for the [Oniguruma] regular expression library.
+**Note: `grok_exporter` is currently refactored to support multiple logfiles, see [#5](https://github.com/fstab/grok_exporter/issues/5). During transition, the `master` branch is unstable. For a stable version, please get the latest release tag.**
+
+In order to compile `grok_exporter` from source, you need
+
+* [Go] installed and `$GOPATH` set.
+* [gcc] installed for `cgo`. On Ubuntu, use `apt-get install build-essential`.
+* Header files for the [Oniguruma] regular expression library, see below.
 
 **Installing the Oniguruma library on OS X**
 
-The current version of `brew install oniguruma` will install Oniguruma 6.1.0. Because of [this bug](https://github.com/kkos/oniguruma/issues/23) version 6.1.0 will not work with grok_exporter. Use the following to install the stable 5.9.6 version:
-
 ```bash
-brew install fstab/oniguruma/oniguruma-5.9.6
+brew install oniguruma
 ```
 
 **Installing the Oniguruma library on Ubuntu Linux**
-
-The current version on Ubuntu is 5.9.6, which is good:
 
 ```bash
 sudo apt-get install libonig-dev
@@ -99,17 +101,24 @@ sudo apt-get install libonig-dev
 
 **Installing the Oniguruma library from source**
 
-Make sure to use version 5.9.6 until grok_exporter supports newer versions:
-
 ```bash
-wget https://github.com/kkos/oniguruma/releases/download/v5.9.6/onig-5.9.6.tar.gz
-tar xfz onig-5.9.6.tar.gz
-cd onig-5.9.6 && ./configure && make && make install
+wget https://github.com/kkos/oniguruma/releases/download/v6.7.0/onig-6.7.0.tar.gz
+tar xfz onig-6.7.0.tar.gz
+cd onig-6.7.0.tar.gz && ./configure && make && make install
 ```
 
 **Installing grok_exporter**
 
-With Oniguruma 5.9.6 installed, download and compile `grok_exporter` as follows:
+With Go 1.11, you can use the new Modules (no need for `go get`). If you are working inside the GOPATH, you need to `export GO111MODULE=on` to enable Go 1.11 Modules.
+
+```bash
+git clone https://github.com/fstab/grok_exporter
+cd grok_exporter
+git submodule update --init --recursive
+go install .
+```
+
+With Go 1.10, use `go get`:
 
 ```bash
 go get github.com/fstab/grok_exporter

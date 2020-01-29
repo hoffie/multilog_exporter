@@ -3,7 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/fstab/grok_exporter/tailer"
+	"github.com/fstab/grok_exporter/tailer/glob"
+	"github.com/fstab/grok_exporter/tailer/fswatcher"
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 )
@@ -11,12 +12,15 @@ import (
 func runTailer(lc LogConfig) {
 	readall := false
 	failOnMissing := false
-	t := tailer.RunFseventFileTailer(lc.Path, readall, failOnMissing, &simpleLogger{})
+	t, err := fswatcher.RunFileTailer([]glob.Glob{glob.Glob(lc.Path)}, readall, failOnMissing, log.New())
+	if err != nil {
+		log.Fatalf("failed to run file tailer for path %s: %s", lc.Path, err)
+	}
 
 	for {
 		line := <-t.Lines()
-		log.WithFields(log.Fields{"line": line, "path": lc.Path}).Debug("new line")
-		handleLine(line, lc.Patterns)
+		log.WithFields(log.Fields{"line": line.Line, "path": lc.Path}).Debug("new line")
+		handleLine(line.Line, lc.Patterns)
 	}
 }
 

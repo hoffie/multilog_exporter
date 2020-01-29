@@ -14,8 +14,7 @@ environment:
     CGO_ENABLED: 1
     CGO_LDFLAGS: C:\msys64\mingw64\lib\libonig.a
     matrix:
-    - ONIG_VERSION: 5.9.6
-#    - ONIG_VERSION: 6.1.0
+    - ONIG_VERSION: 6.9.2
 
 # --------------------------------------------------------------------------
 # The install phase installs the Oniguruma library,
@@ -51,6 +50,7 @@ install:
 build_script:
     - cd c:\go\src\github.com\fstab\grok_exporter
     - git submodule update --init --recursive
+    - set GO111MODULE=on
     - go version
     - go test github.com/fstab/grok_exporter
     - go test github.com/fstab/grok_exporter/config
@@ -59,6 +59,8 @@ build_script:
     - go test github.com/fstab/grok_exporter/exporter
     - go test github.com/fstab/grok_exporter/oniguruma
     - go test github.com/fstab/grok_exporter/tailer
+    - go test github.com/fstab/grok_exporter/tailer/fswatcher
+    - go test github.com/fstab/grok_exporter/tailer/glob
     - go test github.com/fstab/grok_exporter/template
     - go install github.com/fstab/grok_exporter
     - C:\cygwin\bin\bash -c "cd /cygdrive/c/go/src/github.com/fstab/grok_exporter ; PATH='/usr/sbin:/usr/bin:/sbin:/bin' ./integration-test.sh"

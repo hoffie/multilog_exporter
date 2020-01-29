@@ -5,6 +5,7 @@
 package fmt_test
 
 import (
+	gofmt "fmt"
 	"io"
 	"os"
 	"path"
@@ -88,9 +89,8 @@ func TestErrorFormatter(t *testing.T) {
 			"can't adumbrate elephant",
 			detailed{},
 		}
-		transition = &wrapped2{"elephant still on strike", detailed{}}
-		nonascii   = &wrapped{"café", nil}
-		newline    = &wrapped{"msg with\nnewline",
+		nonascii = &wrapped{"café", nil}
+		newline  = &wrapped{"msg with\nnewline",
 			&wrapped{"and another\none", nil}}
 		fallback  = &wrapped{"fallback", os.ErrNotExist}
 		oldAndNew = &wrapped{"new style", formatError("old style")}
@@ -127,15 +127,6 @@ func TestErrorFormatter(t *testing.T) {
 		err: elephant,
 		fmt: "%+v",
 		want: "can't adumbrate elephant:" +
-			"\n    somefile.go:123" +
-			"\n  - out of peanuts:" +
-			"\n    the elephant is on strike" +
-			"\n    and the 12 monkeys" +
-			"\n    are laughing",
-	}, {
-		err: transition,
-		fmt: "%+v",
-		want: "elephant still on strike:" +
 			"\n    somefile.go:123" +
 			"\n  - out of peanuts:" +
 			"\n    the elephant is on strike" +
@@ -232,6 +223,38 @@ func TestErrorFormatter(t *testing.T) {
 			"\nnewline: and another" +
 			"\none",
 	}, {
+		err: newline,
+		fmt: "%+v",
+		want: "msg with" +
+			"\n    newline:" +
+			"\n    somefile.go:123" +
+			"\n  - and another" +
+			"\n    one:" +
+			"\n    somefile.go:123",
+	}, {
+		err: wrapped{"", wrapped{"inner message", nil}},
+		fmt: "%+v",
+		want: "somefile.go:123" +
+			"\n  - inner message:" +
+			"\n    somefile.go:123",
+	}, {
+		err:  spurious(""),
+		fmt:  "%s",
+		want: "spurious",
+	}, {
+		err:  spurious(""),
+		fmt:  "%+v",
+		want: "spurious",
+	}, {
+		err:  spurious("extra"),
+		fmt:  "%s",
+		want: "spurious",
+	}, {
+		err: spurious("extra"),
+		fmt: "%+v",
+		want: "spurious:\n" +
+			"    extra",
+	}, {
 		err:  nil,
 		fmt:  "%+v",
 		want: "<nil>",
@@ -264,6 +287,20 @@ func TestErrorFormatter(t *testing.T) {
 		err:  fmtTwice("%o %s", panicValue{}, "ok"),
 		fmt:  "%s",
 		want: "{} ok/{} ok",
+	}, {
+		err: adapted{"adapted", nil},
+		fmt: "%+v",
+		want: "adapted:" +
+			"\n    detail",
+	}, {
+		err: adapted{"outer", adapted{"mid", adapted{"inner", nil}}},
+		fmt: "%+v",
+		want: "outer:" +
+			"\n    detail" +
+			"\n  - mid:" +
+			"\n    detail" +
+			"\n  - inner:" +
+			"\n    detail",
 	}}
 	for i, tc := range testCases {
 		t.Run(fmt.Sprintf("%d/%s", i, tc.fmt), func(t *testing.T) {
@@ -285,6 +322,37 @@ func TestErrorFormatter(t *testing.T) {
 	}
 }
 
+func TestAdaptor(t *testing.T) {
+	testCases := []struct {
+		err    error
+		fmt    string
+		want   string
+		regexp bool
+	}{{
+		err: adapted{"adapted", nil},
+		fmt: "%+v",
+		want: "adapted:" +
+			"\n    detail",
+	}, {
+		err: adapted{"outer", adapted{"mid", adapted{"inner", nil}}},
+		fmt: "%+v",
+		want: "outer:" +
+			"\n    detail" +
+			"\n  - mid:" +
+			"\n    detail" +
+			"\n  - inner:" +
+			"\n    detail",
+	}}
+	for i, tc := range testCases {
+		t.Run(fmt.Sprintf("%d/%s", i, tc.fmt), func(t *testing.T) {
+			got := gofmt.Sprintf(tc.fmt, tc.err)
+			if got != tc.want {
+				t.Errorf("\n got: %q\nwant: %q", got, tc.want)
+			}
+		})
+	}
+}
+
 var _ errors.Formatter = wrapped{}
 
 type wrapped struct {
@@ -294,21 +362,7 @@ type wrapped struct {
 
 func (e wrapped) Error() string { return "should call Format" }
 
-func (e wrapped) Format(p errors.Printer) (next error) {
-	p.Print(e.msg)
-	p.Detail()
-	p.Print("somefile.go:123")
-	return e.err
-}
-
-type wrapped2 struct {
-	msg string
-	err error
-}
-
-func (e wrapped2) Error() string { return "should call Format" }
-
-func (e wrapped2) FormatError(p errors.Printer) (next error) {
+func (e wrapped) FormatError(p errors.Printer) (next error) {
 	p.Print(e.msg)
 	p.Detail()
 	p.Print("somefile.go:123")
@@ -321,7 +375,7 @@ type detailed struct{}
 
 func (e detailed) Error() string { return fmt.Sprint(e) }
 
-func (detailed) Format(p errors.Printer) (next error) {
+func (detailed) FormatError(p errors.Printer) (next error) {
 	p.Printf("out of %s", "peanuts")
 	p.Detail()
 	p.Print("the elephant is on strike\n")
@@ -335,7 +389,7 @@ type withFrameAndMore struct {
 
 func (e *withFrameAndMore) Error() string { return fmt.Sprint(e) }
 
-func (e *withFrameAndMore) Format(p errors.Printer) (next error) {
+func (e *withFrameAndMore) FormatError(p errors.Printer) (next error) {
 	p.Print("something")
 	if p.Detail() {
 		e.frame.Format(p)
@@ -344,9 +398,45 @@ func (e *withFrameAndMore) Format(p errors.Printer) (next error) {
 	return nil
 }
 
+type spurious string
+
+func (e spurious) Error() string { return fmt.Sprint(e) }
+
+func (e spurious) Format(fmt.State, rune) {
+	panic("should never be called by one of the tests")
+}
+
+func (e spurious) FormatError(p errors.Printer) (next error) {
+	p.Print("spurious")
+	p.Detail() // Call detail even if we don't print anything
+	if e == "" {
+		p.Print()
+	} else {
+		p.Print("\n", string(e)) // print extraneous leading newline
+	}
+	return nil
+}
+
+type adapted struct {
+	msg string
+	err error
+}
+
+func (e adapted) Error() string { return string(e.msg) }
+
+func (e adapted) Format(s fmt.State, verb rune) {
+	fmt.FormatError(s, verb, e)
+}
+
+func (e adapted) FormatError(p errors.Printer) error {
+	p.Print(e.msg)
+	p.Detail()
+	p.Print("detail")
+	return e.err
+}
+
 // formatError is an error implementing Format instead of errors.Formatter.
-// The implementation mimics the implementation of github.com/pkg/errors,
-// including that
+// The implementation mimics the implementation of github.com/pkg/errors.
 type formatError string
 
 func (e formatError) Error() string { return string(e) }
@@ -383,7 +473,7 @@ func fmtTwice(format string, a ...interface{}) error {
 
 func (e fmtTwiceErr) Error() string { return fmt.Sprint(e) }
 
-func (e fmtTwiceErr) Format(p errors.Printer) (next error) {
+func (e fmtTwiceErr) FormatError(p errors.Printer) (next error) {
 	p.Printf(e.format, e.args...)
 	p.Print("/")
 	p.Printf(e.format, e.args...)
@@ -420,7 +510,7 @@ func errToParts(err error) (a []string) {
 			a = append(a, err.Error())
 			break
 		}
-		err = f.Format(&p)
+		err = f.FormatError(&p)
 		a = append(a, cleanPath(p.str))
 	}
 	return a
