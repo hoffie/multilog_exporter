@@ -52,7 +52,7 @@ If it turns out this is required and cannot be solved on the scraping side, supp
 You may have noticed that there are two very popular tools which seem to have similar goals to this project: Google's [mtail](https://github.com/google/mtail) and @fstab's [grok_exporter](https://github.com/fstab/grok_exporter).
 There is basically two reasons, why this tool exists:
 
-  * multilog_exporter provides an easy way to monitor multiple log files while still handling the them as independent files.
+  * multilog_exporter provides an easy way to monitor multiple log files while still handling them as independent files.
     For instance, you could use it to monitor your system log and count the frequency of certain events while concurrently monitoring an application log with totally different data.
   * multilog_exporter aims to provide a simple, integrated way to configure it, while the other tools implement own domain-specific languages or require knowledge of the grok format.
 
