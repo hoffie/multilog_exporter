@@ -11,10 +11,13 @@ URL=http://$ADDR/metrics
 
 BASE=$(realpath $(dirname "$0"))
 
-mkdir -p "$BASE/logs"
-rm -f "$BASE"/logs/*.log
+mkdir -p "$BASE/logs" "$BASE/temp"
+rm -f "$BASE"/logs/*.log "$BASE"/temp/*.yaml
 
-./multilog_exporter --config.file doc/example.yaml  --metrics.listen-addr $ADDR &
+cp doc/example.yaml temp/example.yaml
+
+go build .
+./multilog_exporter --config.file temp/example.yaml  --metrics.listen-addr $ADDR &
 pid=$!
 trap 'kill -9 "$pid"' EXIT
 
@@ -50,6 +53,14 @@ sleep 0.5
 users_only_test=$(curl -s "$URL" | sed -rne 's/^users_only.*test.* ([0-9]*)$/\1/p')
 [[ $users_only_test -eq 28 ]] || die "users_only test != 28 ($users_only_test)"
 
+cp doc/example2.yaml temp/example.yaml
+kill -1 "$pid"
+sleep 0.5
 
-echo
+echo "requests per second: 12" >> logs/instance.log
+sleep 0.5
+requests_per_second=$(curl -s "$URL" | sed -rne 's/^requests_per_second.* ([0-9]+)$/\1/p')
+[[ $requests_per_second -eq 12 ]] || die "requests_per_second != 12 ($requests_per_second)"
+
+
 echo "All tests finished successfully"

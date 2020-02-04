@@ -152,3 +152,13 @@ func TestHandleLine(t *testing.T) {
 	handleLine("finishing job", patterns)
 	want("\njobs_inflight 0\n")
 }
+
+func TestRunTailer(t *testing.T) {
+	c := &Config{}
+	tailers := NewSafeTailers()
+	err := runTailer(c, "doc/example.yaml", tailers)
+	if err != nil {
+		t.Fatalf("Got error: %v, wanted: nil", err)
+	}
+
+}

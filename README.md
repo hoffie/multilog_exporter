@@ -38,6 +38,22 @@ In general, the config consists of a list of log file paths.
 For each log file path, a list of patterns is configured.
 The pattern describes how to map log lines to Prometheus metrics.
 
+### Reloading configuration
+
+Configuration can be reloaded without stopping the application, by means of a `SIGHUP` signal. This can be useful to
+change the configuration (for instance, adding new log files or patterns) without losing current exposed metrics.
+
+```bash
+$ kill -SIGHUP $(pidof multilog_exporter)
+```
+
+When doing so, the application log should reflect the reload
+
+```text
+INFO[0137] SIGHUP received, reloading config file        configFile=doc/example.yaml
+INFO[0137] Loading config file                           configFile=doc/example.yaml
+```
+
 ## Limitations
 ### Multi-cardinality
 There is no support for working with multi-cardinality in log files.

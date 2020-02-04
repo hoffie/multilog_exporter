@@ -7,8 +7,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var metricsByName = make(map[string]prometheus.Collector)
-
 func registerMetrics(pcs []*PatternConfig) error {
 	for idx, pc := range pcs {
 		log.WithFields(log.Fields{"metric": pc.Metric}).Info("Registering pattern")

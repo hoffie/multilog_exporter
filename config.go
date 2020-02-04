@@ -6,15 +6,17 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
 
 type PatternConfig struct {
 	Match         string
-	MatchCompiled *regexp.Regexp `yaml:-`
+	MatchCompiled *regexp.Regexp `yaml:"-"`
 	Metric        string
 	Type          string
 	Help          string
@@ -32,20 +34,28 @@ type LogConfig struct {
 }
 
 type Config struct {
+	sync.Mutex
 	Logs []LogConfig
 }
 
-func loadConfigFile(path string) (Config, error) {
-	var c Config
+func (c *Config) load(path string) error {
+	c.Lock()
+	defer c.Unlock()
 	content, err := ioutil.ReadFile(path)
 	if err != nil {
-		return c, fmt.Errorf("cannot read file '%s': %s", path, err)
+		return fmt.Errorf("cannot read file '%s': %s", path, err)
 	}
+	log.WithFields(log.Fields{"configFile": path}).Info("Loading config file")
 	err = yaml.UnmarshalStrict(content, &c)
 	if err != nil {
-		return c, fmt.Errorf("yaml parse error: %s", err)
+		return fmt.Errorf("yaml parse error: %s, failed to load config", err)
 	}
-	return c, nil
+
+	if len(c.Logs) < 1 {
+		return fmt.Errorf("no Logs configured, cannot do anything")
+	}
+
+	return nil
 }
 
 func (pc *PatternConfig) compile() error {
