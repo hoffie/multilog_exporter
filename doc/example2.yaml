@@ -1,0 +1,116 @@
+# This is the entry point and specifies a list of log-specific configurations.
+# So, which files do you want to monitor...?
+logs:
+
+  # The path to a monitored log should usually be absolute, but we are using a relative path
+  # here to make this example config work on different user's machines:
+  - path: logs/kernel.log
+
+    # For each log file, one or more patterns should be specified.
+    # The pattern describes how log lines are mapped to Prometheus metrics:
+    patterns:
+
+      # A pattern starts with a `match` key, which contains a regular expression.
+      # Patterns are anchored. Therefore, typically there is no need for using ^ or $ characters.
+      - match: 'panic:.*'
+
+        # The next step is specifying the Prometheus metric name:
+        metric: kernel_panics
+
+        # ... and you also have to tell us whether this is a monotonically increasing metric
+        # (a `counter`, as seen here) or a gauge (see below):
+        type: counter
+
+        # A short help text should be provided. It is included in the Prometheus metric output.
+        help: Number of kernel panics
+
+        # The action specifies what to do when the pattern matches.
+        # In this case it is set to `inc`, which means to increment the counter.
+        action: inc
+
+        # The counter is incremented by the content of the `value` field.
+        # In this case, each match would lead to the counter being increased by one:
+        value: 1
+
+        # If this pattern matches the current line, further pattern processing is stopped.
+        # This is the default behavior (if `continue` was omitted).
+        continue: false
+
+  - path: logs/instance.log
+
+    patterns:
+      # This match pattern shows that you can make use of capturing groups:
+      - match: 'copying (?P<bytes>\d+) bytes in instance (?P<instance>[^ ]+), result'
+
+        metric: copied_bytes
+
+        type: counter
+
+        help: Amount of bytes copied
+
+        # Until now, we did not encounter a metric with labels. Now, there is one.
+        # The provided labels will be added to the output in the typical Prometheus
+        # syntax:
+        labels:
+          # Results from capturing groups can be referenced in labels using the dollar sign:
+          instance: $instance
+
+        action: inc
+
+        # Capturing group results can also be referenced in the value field:
+        value: $bytes
+
+        # In this case, we want pattern processing to continue, even if this entry matched.
+        # This can make sense when you want to count all lines which denote a request, but
+        # want to add an additional metric for all lines which (in addition) contain an
+        # error indicator:
+        continue: true
+
+      - match: 'copying (?P<bytes>\d+) bytes in instance (?P<instance>[^ ]+), result'
+        metric: copying_requests_total
+        type: counter
+        help: Number of copying requests
+        labels:
+          instance: $instance
+        action: inc
+        value: 1
+        continue: true
+
+      - match: 'copying (?P<bytes>\d+) bytes in instance (?P<instance>[^ ]+), result: error'
+        metric: copying_errors_total
+        type: counter
+        help: Number of errors in copying requests
+        labels:
+          instance: $instance
+        action: inc
+        value: 1
+
+      - match: 'users only in pool (?P<pool>[^ ]+): (?P<count>\d+)'
+        metric: users_only
+
+        # Until now we have only seen counters. Now we have a gauge. In contrast to a counter,
+        # a gauge may fluctuate arbitrarily. Its value may also decrease.
+        type: gauge
+        help: Number of users online
+        labels:
+          pool: $pool
+
+        # In contrast to a counter, a gauge can also be set explicitly, which is what we do here.
+        # This is useful if the log contains some kind of current status information:
+        action: set
+
+        value: $count
+
+      - match: 'requests per second: (?P<count>\d+)'
+        metric: requests_per_second
+
+        # Until now we have only seen counters. Now we have a gauge. In contrast to a counter,
+        # a gauge may fluctuate arbitrarily. Its value may also decrease.
+        type: gauge
+        help: Number of requests per second
+
+        # In contrast to a counter, a gauge can also be set explicitly, which is what we do here.
+        # This is useful if the log contains some kind of current status information:
+        action: set
+
+        value: $count

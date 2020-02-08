@@ -1,6 +1,10 @@
 package main
 
 import (
+	"os"
+	"os/signal"
+	"syscall"
+
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
@@ -11,33 +15,50 @@ var (
 	metricsListenAddr = kingpin.Flag("metrics.listen-addr", "listen address for metrics webserver").Default("127.0.0.1:9144").String()
 )
 
-var config *Config
-
 func main() {
+	config := &Config{}
+	tailers := NewSafeTailers()
+
 	kingpin.Parse()
 	if *debug {
 		log.SetLevel(log.DebugLevel)
 	} else {
 		log.SetLevel(log.InfoLevel)
 	}
-	log.WithFields(log.Fields{"configFile": *configFile}).Info("Loading config file")
-	config, err := loadConfigFile(*configFile)
-	if err != nil {
-		log.Fatalf("failed to load config: %s", err)
-	}
 
-	if len(config.Logs) < 1 {
-		log.Fatal("No Logs configured, cannot do anything")
-	}
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, syscall.SIGHUP)
 
-	for _, lc := range config.Logs {
-		log.WithFields(log.Fields{"path": lc.Path}).Info("Registering relevant metrics")
-		err := registerMetrics(lc.Patterns)
-		if err != nil {
-			log.Fatalf("failed to register metrics: %s", err)
+		for {
+			select {
+			case <-c:
+				log.WithFields(log.Fields{"configFile": *configFile}).Info("SIGHUP received, " +
+					"reloading config file")
+				err := config.load(*configFile)
+				if err != nil {
+					log.Warnf("Unable to load configuration file: '%s'. Skipping configuration reload and "+
+						"keeping current configuration", *configFile)
+					break
+				}
+
+				err = runTailer(config, *configFile, tailers)
+				if err != nil {
+					log.Fatal(err)
+				}
+
+			}
 		}
-		log.WithFields(log.Fields{"path": lc.Path}).Info("Starting tailer")
-		go runTailer(lc)
+	}()
+
+	err := config.load(*configFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = runTailer(config, *configFile, tailers)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	runServer(*metricsListenAddr)

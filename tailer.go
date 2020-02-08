@@ -2,23 +2,75 @@ package main
 
 import (
 	"fmt"
+	"sync"
 
-	"github.com/fstab/grok_exporter/tailer/glob"
 	"github.com/fstab/grok_exporter/tailer/fswatcher"
+	"github.com/fstab/grok_exporter/tailer/glob"
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 )
 
-func runTailer(lc LogConfig) {
-	readall := false
-	failOnMissing := false
-	t, err := fswatcher.RunFileTailer([]glob.Glob{glob.Glob(lc.Path)}, readall, failOnMissing, log.New())
-	if err != nil {
-		log.Fatalf("failed to run file tailer for path %s: %s", lc.Path, err)
+type SafeTailers struct {
+	sync.Mutex
+	Tailers []fswatcher.FileTailer
+}
+
+func NewSafeTailers() *SafeTailers {
+	return &SafeTailers{}
+}
+
+func (tg *SafeTailers) start(lcs []LogConfig) error {
+	tg.Lock()
+	defer tg.Unlock()
+	for _, lc := range lcs {
+		log.WithFields(log.Fields{"path": lc.Path}).Info("Registering relevant metrics")
+		err := registerMetrics(lc.Patterns)
+		if err != nil {
+			return fmt.Errorf("failed to register metrics: %s", err)
+		}
+		log.WithFields(log.Fields{"path": lc.Path}).Info("Starting tailer")
+		readall := false
+		failOnMissing := false
+		t, err := fswatcher.RunFileTailer([]glob.Glob{glob.Glob(lc.Path)}, readall, failOnMissing, log.New())
+		if err != nil {
+			return fmt.Errorf("failed to start file tailer for path %s: %s", lc.Path, err)
+		}
+		tg.Tailers = append(tg.Tailers, t)
+
+		go waitForTailerLines(t, lc)
+	}
+	return nil
+}
+
+func (tg *SafeTailers) stop() {
+	tg.Lock()
+	defer tg.Unlock()
+	for _, tailer := range tg.Tailers {
+		tailer.Close()
+	}
+	tg.Tailers = nil
+}
+
+func runTailer(config *Config, configPath string, tailers *SafeTailers) error {
+	if tailers.Tailers != nil {
+		log.WithFields(log.Fields{"configFile": configPath}).Debug("Stopping current tailers...")
+		tailers.stop()
 	}
 
+	err := tailers.start(config.Logs)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func waitForTailerLines(t fswatcher.FileTailer, lc LogConfig) {
 	for {
-		line := <-t.Lines()
+		line, open := <-t.Lines()
+		if !open {
+			break
+		}
 		log.WithFields(log.Fields{"line": line.Line, "path": lc.Path}).Debug("new line")
 		handleLine(line.Line, lc.Patterns)
 	}

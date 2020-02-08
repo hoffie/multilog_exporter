@@ -6,7 +6,8 @@ import (
 )
 
 func TestLoadExampleConfig(t *testing.T) {
-	c, err := loadConfigFile("doc/example.yaml")
+	c := Config{}
+	err := c.load("doc/example.yaml")
 	if err != nil {
 		t.Fatalf("error: %s", err)
 	}
