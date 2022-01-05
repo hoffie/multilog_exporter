@@ -1,4 +1,4 @@
-// Copyright 2018 The grok_exporter Authors
+// Copyright 2018-2020 The grok_exporter Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ func Parse(pattern string) (Glob, error) {
 	}
 	absglob, err = filepath.Abs(pattern)
 	if err != nil {
-		return "", fmt.Errorf("%q: failed to finnd absolute path for glob pattern: %v", pattern, err)
+		return "", fmt.Errorf("%q: failed to find absolute path for glob pattern: %v", pattern, err)
 	}
 	result = Glob(absglob)
 	if containsWildcards(result.Dir()) {
@@ -51,17 +51,6 @@ func (g Glob) Match(path string) bool {
 	return matched
 }
 
-// The file tailer implementation switched from watching single paths to globs,
-// but the rest of grok_exporter just supports single files.
-// FromPath creates a Glob from a file path, so that we can use the new file
-// tailers but be sure only a single file is watched.
-func FromPath(path string) (Glob, error) {
-	if containsWildcards(path) {
-		return "", fmt.Errorf("%v: illegal file name", path)
-	}
-	return Parse(path)
-}
-
 func containsWildcards(pattern string) bool {
 	p := []rune(pattern)
 	escaped := false // p[i] is escaped by '\\'
@@ -71,7 +60,7 @@ func containsWildcards(pattern string) bool {
 			continue
 		}
 		if !escaped && (p[i] == '[' || p[i] == '*' || p[i] == '?') {
-			return false
+			return true
 		}
 		escaped = false
 	}

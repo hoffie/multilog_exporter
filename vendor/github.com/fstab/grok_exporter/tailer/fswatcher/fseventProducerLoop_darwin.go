@@ -1,4 +1,4 @@
-// Copyright 2018 The grok_exporter Authors
+// Copyright 2018-2020 The grok_exporter Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -61,9 +61,11 @@ func runKeventLoop(kq int) *keventloop {
 		for {
 			eventBuf = make([]syscall.Kevent_t, 10)
 			n, err = syscall.Kevent(l.kq, nil, eventBuf, nil)
-			if err == syscall.EINTR || err == syscall.EBADF {
+			if err == syscall.EBADF {
 				// kq was closed, i.e. Close() was called.
 				return
+			} else if err == syscall.EINTR {
+				continue
 			} else if err != nil {
 				select {
 				case <-l.done:

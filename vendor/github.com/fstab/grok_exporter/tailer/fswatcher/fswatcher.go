@@ -32,8 +32,9 @@ type FileTailer interface {
 }
 
 type Line struct {
-	Line string
-	File string
+	Line  string
+	File  string
+	Extra interface{}
 }
 
 // ideas how this might look like in the config file:
@@ -229,7 +230,6 @@ func (t *fileTailer) shutdown() {
 
 func (t *fileTailer) watchDirs(log logrus.FieldLogger) Error {
 	var (
-		err      error
 		Err      Error
 		dirPaths []string
 		dirPath  string
@@ -241,7 +241,7 @@ func (t *fileTailer) watchDirs(log logrus.FieldLogger) Error {
 	for _, dirPath = range dirPaths {
 		log.Debugf("watching directory %v", dirPath)
 		dir, Err := t.osSpecific.watchDir(dirPath)
-		if err != nil {
+		if Err != nil {
 			return Err
 		}
 		t.watchedDirs = append(t.watchedDirs, dir)
@@ -371,7 +371,7 @@ func (t *fileTailer) readNewLines(file *fileWithReader, log logrus.FieldLogger) 
 func (t *fileTailer) checkMissingFile() Error {
 OUTER:
 	for _, g := range t.globs {
-		for watchedFileName, _ := range t.watchedFiles {
+		for watchedFileName := range t.watchedFiles {
 			if g.Match(watchedFileName) {
 				continue OUTER
 			}
