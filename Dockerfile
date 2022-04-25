@@ -1,6 +1,6 @@
 FROM golang:1.18-alpine AS builder
 WORKDIR /build
-RUN apk update &&  apk upgrade && apk add git
+RUN apk update && apk upgrade && apk add git
 COPY . /build/
 RUN go build
     
