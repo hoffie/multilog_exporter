@@ -32,6 +32,20 @@ logs:
         # In this case, each match would lead to the counter being increased by one:
         value: 1
 
+        # If this pattern matches the current line, further pattern processing should continue.
+        # The default behavior would be to stop processing patterns.
+        continue: true
+
+      - match: 'panic:.*'
+        metric: kernel_panic_timestamp_seconds
+        type: gauge
+
+        # A short help text should be provided. It is included in the Prometheus metric output.
+        help: Timestamp of last kernel panic
+        action: set
+        # If the log line is found, set the metric to the current UNIX time:
+        value: now()
+
         # If this pattern matches the current line, further pattern processing is stopped.
         # This is the default behavior (if `continue` was omitted).
         continue: false
