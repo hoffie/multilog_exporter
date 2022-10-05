@@ -31,7 +31,7 @@ func (tg *SafeTailers) start(lcs []LogConfig) error {
 		log.WithFields(log.Fields{"path": lc.Path}).Info("Starting tailer")
 		readall := false
 		failOnMissing := false
-		t, err := fswatcher.RunFileTailer([]glob.Glob{glob.Glob(lc.Path)}, readall, failOnMissing, log.New())
+		t, err := fswatcher.RunFileTailer([]glob.Glob{glob.Glob(lc.Path)}, readall, failOnMissing, log.StandardLogger())
 		if err != nil {
 			return fmt.Errorf("failed to start file tailer for path %s: %s", lc.Path, err)
 		}
