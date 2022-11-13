@@ -15,9 +15,10 @@
 package fswatcher
 
 import (
-	"github.com/sirupsen/logrus"
 	"io"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 type pollingWatcher struct {
@@ -70,6 +71,10 @@ func (w *pollingWatcher) watchDir(path string) (*Dir, Error) {
 }
 
 func (w *pollingWatcher) unwatchDir(dir *Dir) error {
+	return nil
+}
+
+func (w *pollingWatcher) unwatchDirDelayed(dir *Dir) error {
 	return nil
 }
 

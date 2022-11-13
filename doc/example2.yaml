@@ -114,3 +114,12 @@ logs:
         action: set
 
         value: $count
+
+  - path: logs/links-should-also-work.log
+    patterns:
+      - match: '.*'
+        metric: metric_from_a_symlinked_file
+        type: counter
+        help: A metric from a symlinked file
+        action: inc
+        value: 1

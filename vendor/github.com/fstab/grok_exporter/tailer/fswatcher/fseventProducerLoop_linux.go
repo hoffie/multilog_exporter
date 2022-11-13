@@ -23,10 +23,11 @@ import (
 )
 
 type inotifyloop struct {
-	fd     int
-	events chan fsevent
-	errors chan Error
-	done   chan struct{}
+	fd            int
+	events        chan fsevent
+	errors        chan Error
+	dirsToUnwatch chan uint32
+	done          chan struct{}
 }
 
 type inotifyEvent struct {
@@ -42,6 +43,15 @@ func (l *inotifyloop) Errors() chan Error {
 	return l.errors
 }
 
+func (l *inotifyloop) UnwatchDir(wd uint32) error {
+	select {
+	case l.dirsToUnwatch <- wd:
+		return nil
+	default:
+		return fmt.Errorf("failed to queue wd %d for removal", wd)
+	}
+}
+
 // Terminate the inotify loop.
 // If the loop hangs in syscall.Read(), it will keep hanging there until the next event is read.
 // Therefore, after the consumer called Close(), it should generate an artificial IN_IGNORE event to
@@ -52,10 +62,11 @@ func (l *inotifyloop) Close() {
 
 func runInotifyLoop(fd int) *inotifyloop {
 	var result = &inotifyloop{
-		fd:     fd,
-		events: make(chan fsevent),
-		errors: make(chan Error),
-		done:   make(chan struct{}),
+		fd:            fd,
+		events:        make(chan fsevent),
+		errors:        make(chan Error),
+		dirsToUnwatch: make(chan uint32, 128),
+		done:          make(chan struct{}),
 	}
 	go func(l *inotifyloop) {
 		var (
@@ -70,6 +81,24 @@ func runInotifyLoop(fd int) *inotifyloop {
 			close(result.events)
 		}()
 		for {
+			// process dir unwatch requests which cannot be done while in Read():
+			for run := true; run; {
+				select {
+				case dirToUnwatch := <-l.dirsToUnwatch:
+					success, err := syscall.InotifyRmWatch(l.fd, dirToUnwatch)
+					if success != 0 || err != nil {
+						select {
+						case l.errors <- NewError(NotSpecified, err, fmt.Sprintf("inotify_rm_watch(%q) failed: status=%v, err=%v", dirToUnwatch, success, err)):
+						default:
+						}
+						return
+					}
+					continue
+				default:
+					run = false
+				}
+			}
+			// now wait for a real event:
 			n, err = syscall.Read(l.fd, buf)
 			if err != nil {
 				// Getting an err might be part of the shutdown, when l.fd is closed.

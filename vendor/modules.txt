@@ -11,7 +11,7 @@ github.com/beorn7/perks/quantile
 # github.com/cespare/xxhash/v2 v2.1.2
 ## explicit; go 1.11
 github.com/cespare/xxhash/v2
-# github.com/fstab/grok_exporter v0.2.9-0.20200921195934-c2f8f34a8f6b => github.com/hoffie/grok_exporter v0.2.9-0.20220106073126-d462cb52eaa4
+# github.com/fstab/grok_exporter v0.2.9-0.20200921195934-c2f8f34a8f6b => github.com/hoffie/grok_exporter v0.2.9-0.20221113211605-e542ffba68a2
 ## explicit; go 1.15
 github.com/fstab/grok_exporter/tailer/fswatcher
 github.com/fstab/grok_exporter/tailer/glob
@@ -87,4 +87,4 @@ gopkg.in/alecthomas/kingpin.v2
 # gopkg.in/yaml.v2 v2.4.0
 ## explicit; go 1.15
 gopkg.in/yaml.v2
-# github.com/fstab/grok_exporter => github.com/hoffie/grok_exporter v0.2.9-0.20220106073126-d462cb52eaa4
+# github.com/fstab/grok_exporter => github.com/hoffie/grok_exporter v0.2.9-0.20221113211605-e542ffba68a2

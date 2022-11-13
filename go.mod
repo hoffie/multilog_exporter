@@ -28,4 +28,4 @@ require (
 	golang.org/x/sys v0.0.0-20220928140112-f11e5e49a4ec // indirect
 )
 
-replace github.com/fstab/grok_exporter => github.com/hoffie/grok_exporter v0.2.9-0.20220106073126-d462cb52eaa4
+replace github.com/fstab/grok_exporter => github.com/hoffie/grok_exporter v0.2.9-0.20221113211605-e542ffba68a2

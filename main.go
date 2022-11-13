@@ -25,6 +25,10 @@ func main() {
 	} else {
 		log.SetLevel(log.InfoLevel)
 	}
+	log.SetFormatter(&log.TextFormatter{
+		DisableColors: true,
+		FullTimestamp: true,
+	})
 
 	go func() {
 		c := make(chan os.Signal, 1)

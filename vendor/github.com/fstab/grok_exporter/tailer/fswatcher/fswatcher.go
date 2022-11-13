@@ -48,13 +48,15 @@ type Line struct {
 // Moreover, we should provide vars {{.filename}} and {{.filepath}} for labels.
 
 type fileTailer struct {
-	globs        []glob.Glob
-	watchedDirs  []*Dir
-	watchedFiles map[string]*fileWithReader // path -> fileWithReader
-	osSpecific   fswatcher
-	lines        chan *Line
-	errors       chan Error
-	done         chan struct{}
+	globs               []glob.Glob
+	watchedDirs         []*Dir
+	watchedDirsRefCount map[string]uint
+	symlinkSrcToTarget  map[string]string
+	watchedFiles        map[string]*fileWithReader // path -> fileWithReader
+	osSpecific          fswatcher
+	lines               chan *Line
+	errors              chan Error
+	done                chan struct{}
 }
 
 type fswatcher interface {
@@ -63,6 +65,7 @@ type fswatcher interface {
 	processEvent(t *fileTailer, event fsevent, log logrus.FieldLogger) Error
 	watchDir(path string) (*Dir, Error)
 	unwatchDir(dir *Dir) error
+	unwatchDirDelayed(dir *Dir) error
 	watchFile(file fileMeta) Error
 }
 
@@ -115,11 +118,13 @@ func runFileTailer(initFunc func() (fswatcher, Error), globs []glob.Glob, readal
 	)
 
 	t = &fileTailer{
-		globs:        globs,
-		watchedFiles: make(map[string]*fileWithReader),
-		lines:        make(chan *Line),
-		errors:       make(chan Error),
-		done:         make(chan struct{}),
+		globs:               globs,
+		watchedDirsRefCount: make(map[string]uint),
+		watchedFiles:        make(map[string]*fileWithReader),
+		symlinkSrcToTarget:  make(map[string]string),
+		lines:               make(chan *Line),
+		errors:              make(chan Error),
+		done:                make(chan struct{}),
 	}
 
 	t.osSpecific, Err = initFunc()
@@ -239,14 +244,62 @@ func (t *fileTailer) watchDirs(log logrus.FieldLogger) Error {
 		return Err
 	}
 	for _, dirPath = range dirPaths {
-		log.Debugf("watching directory %v", dirPath)
-		dir, Err := t.osSpecific.watchDir(dirPath)
+		Err = t.watchDir(dirPath, log)
 		if Err != nil {
 			return Err
 		}
-		t.watchedDirs = append(t.watchedDirs, dir)
 	}
 	return nil
+}
+
+func (t *fileTailer) watchDir(dirPath string, log logrus.FieldLogger) Error {
+	log.Debugf("t.watchDir(%v)", dirPath)
+	if refCount, exists := t.watchedDirsRefCount[dirPath]; exists && refCount >= 1 {
+		log.Debugf("using existing dir watch for %v", dirPath)
+		return nil
+	}
+	log.Debugf("watching directory %v", dirPath)
+	dir, Err := t.osSpecific.watchDir(dirPath)
+	if Err != nil {
+		return Err
+	}
+	t.watchedDirs = append(t.watchedDirs, dir)
+	if _, exists := t.watchedDirsRefCount[dirPath]; exists {
+		t.watchedDirsRefCount[dirPath]++
+	} else {
+		t.watchedDirsRefCount[dirPath] = 1
+	}
+	return nil
+}
+
+func (t *fileTailer) unwatchDir(dirPath string, log logrus.FieldLogger) error {
+	log.Debugf("t.unwatchDir(%v)", dirPath)
+	if _, exists := t.watchedDirsRefCount[dirPath]; !exists {
+		log.Debugf("attempted to unwatch non-watched dir path: %v", dirPath)
+		return nil
+	}
+	t.watchedDirsRefCount[dirPath]--
+	if t.watchedDirsRefCount[dirPath] > 0 {
+		return nil
+	}
+
+	newWatchedDirs := make([]*Dir, 0)
+	var err error
+	for _, dir := range t.watchedDirs {
+		if dir.Path() == dirPath {
+			log.Debugf("really unwatching dir path: %v %v", dir.Path(), dir.wd)
+			err = t.osSpecific.unwatchDirDelayed(dir)
+		} else {
+			log.Debugf("keeping watch for %v %v", dir.Path(), dir.wd)
+			newWatchedDirs = append(newWatchedDirs, dir)
+		}
+	}
+	if len(t.watchedDirs) == len(newWatchedDirs) {
+		log.Warnf("attempted to unwatch unknown dir path: %v", dirPath)
+		return nil
+	}
+	t.watchedDirs = newWatchedDirs
+	return err
 }
 
 func (t *fileTailer) syncFilesInDir(dir *Dir, readall bool, log logrus.FieldLogger) Error {
@@ -263,13 +316,34 @@ func (t *fileTailer) syncFilesInDir(dir *Dir, readall bool, log logrus.FieldLogg
 	for _, fileInfo := range fileInfos {
 		filePath := filepath.Join(dir.Path(), fileInfo.Name())
 		fileLogger := log.WithField("file", fileInfo.Name())
-		if !anyGlobMatches(t.globs, filePath) {
+		if !anyGlobMatches(t.globs, filePath) && !t.pathIsSymlinkTarget(filePath) {
 			fileLogger.Debug("skipping file, because file name does not match")
 			continue
 		}
 		if fileInfo.IsDir() {
 			fileLogger.Debug("skipping, because it is a directory")
 			continue
+		}
+		if fileInfo.Mode()&os.ModeSymlink == os.ModeSymlink {
+			fileLogger.Debug("it's a symlink, adding link target")
+			targetPath, err := os.Readlink(filePath)
+			if err != nil {
+				fileLogger.Warnf("failed to readlink() target: %v, %v", filePath, err)
+				continue
+			}
+			if targetPath != "" && targetPath[0] != '/' {
+				// resolve relative symlink:
+				targetPath = filepath.Join(filepath.Dir(filePath), targetPath)
+			}
+			t.trackSymlink(filePath, targetPath, fileLogger)
+			fileInfo, err = os.Stat(filePath)
+			if err != nil {
+				fileLogger.Debugf("failed to stat() symlink target, can't open it right now: %v", filePath)
+				continue
+			}
+			filePath = targetPath
+		} else {
+			t.trackSymlink(filePath, "", fileLogger)
 		}
 		alreadyWatched, Err := findSameFile(t, fileInfo, filePath)
 		if Err != nil {
@@ -343,6 +417,41 @@ func (t *fileTailer) syncFilesInDir(dir *Dir, readall bool, log logrus.FieldLogg
 	}
 	t.watchedFiles = watchedFilesAfter
 	return nil
+}
+
+func (t *fileTailer) pathIsSymlinkTarget(filePath string) bool {
+	for _, target := range t.symlinkSrcToTarget {
+		if target == filePath {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *fileTailer) trackSymlink(src, target string, log logrus.FieldLogger) {
+	log.Debugf("trackSymlink: src=%v target=%v", src, target)
+	oldTarget := ""
+	if target, exists := t.symlinkSrcToTarget[src]; exists {
+		oldTarget = target
+	}
+	targetPathDir := filepath.Dir(target)
+	oldTargetDir := filepath.Dir(oldTarget)
+	if oldTargetDir != targetPathDir {
+		if target != "" {
+			log.Debugf("adding watcher for target=%v", targetPathDir)
+			Err := t.watchDir(targetPathDir, log)
+			if Err != nil {
+				log.Warnf("failed to watch %v as target parent of link %v: %v", targetPathDir, src, Err)
+				t.symlinkSrcToTarget[src] = "" // try again next time
+				return
+			}
+		}
+		if oldTarget != "" {
+			log.Errorf("!! removing oldTarget %v", oldTargetDir)
+			t.unwatchDir(oldTargetDir, log)
+		}
+	}
+	t.symlinkSrcToTarget[src] = target
 }
 
 func (t *fileTailer) readNewLines(file *fileWithReader, log logrus.FieldLogger) Error {

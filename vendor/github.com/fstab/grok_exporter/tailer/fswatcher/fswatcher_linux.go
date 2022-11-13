@@ -16,21 +16,27 @@ package fswatcher
 
 import (
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/sirupsen/logrus"
 )
 
 type watcher struct {
-	fd int
+	fd   int
+	loop *inotifyloop
 }
 
 type fileWithReader struct {
 	file   *os.File
 	reader *lineReader
+}
+
+func (w *watcher) unwatchDirDelayed(dir *Dir) error {
+	return w.loop.UnwatchDir(uint32(dir.wd))
 }
 
 func (w *watcher) unwatchDir(dir *Dir) error {
@@ -64,7 +70,8 @@ func unwatchDirByEvent(t *fileTailer, event inotifyEvent) {
 }
 
 func (w *watcher) runFseventProducerLoop() fseventProducerLoop {
-	return runInotifyLoop(w.fd)
+	w.loop = runInotifyLoop(w.fd)
+	return w.loop
 }
 
 func initWatcher() (fswatcher, Error) {
