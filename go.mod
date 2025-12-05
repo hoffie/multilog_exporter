@@ -5,7 +5,7 @@ go 1.17
 require (
 	github.com/fstab/grok_exporter v0.2.9-0.20200921195934-c2f8f34a8f6b
 	github.com/prometheus/client_golang v1.14.0
-	github.com/sirupsen/logrus v1.9.0
+	github.com/sirupsen/logrus v1.9.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
 )
